@@ -42,7 +42,38 @@ Vaisseaux = {
     43: "Croiseur d'élite"
     }
 
-TIMEUNIT = 2
+TIMEUNIT = 1
+
+class Armada():
+
+    def __init__(self):
+        self.fleets = []
+        self.fleet = {}
+
+    def addFleet(self, fleet):
+        self.fleets.append(fleet)
+        for shipid, ship in fleet.fleet.items():
+            effectif = ship.effectif
+            if shipid in self.fleet:
+                effectif += self.fleet[shipid]
+            self.fleet.update({shipid : effectif})
+        
+    def hit(self, shipid, damage):
+        firepower = kill = 0
+        for fleet in self.fleets:
+            if fleet.effectif(shipid):
+                dmg = int(damage * (fleet.effectif(shipid) / self.fleet[shipid]))
+                fp, k = fleet.fleet[shipid].hit(dmg)
+                firepower += fp
+                kill += k
+        return firepower, kill
+    
+    def effectif(self, shipid):
+        if shipid in self.fleet:
+            return self.fleet[shipid]
+        else:
+            return 0
+        
 
 class Fleet():
 
@@ -63,6 +94,10 @@ class Fleet():
                 ship.start()
                 self.ships += n
 
+    def hit(self, shipid, damage):
+        firepower, kill = self.fleet[shipid].hit(damage)
+        return firepower, kill
+    
     def update(self):
         ships = 0
         signature = 0
@@ -72,6 +107,12 @@ class Fleet():
         self.ships = ships
         self.signature = signature
 
+    def effectif(self, shipid):
+        if shipid in self.fleet:
+            return self.fleet[shipid].effectif
+        else:
+            return 0
+        
     def stop(self):
         for shipid, ship in self.fleet.items():
             ship.stop()
@@ -164,10 +205,14 @@ class Battle():
     
     def __init__(self):
         
-        self.startTime = datetime.now().timestamp()
-        self.do()
+        self.fleets = []
+        
+    def addFleet(self, owner, fleet):
+        self.fleets.append(Fleet(owner, fleet))
         
     def do(self):
+        
+        self.startTime = datetime.now().timestamp()
         
         while True:
             
@@ -187,47 +232,48 @@ class Battle():
         
     def getOpponent(self, attacker):
         
-        defenders = []
+        armada = Armada()
         
         if type(attacker) is Fleet:
             owner = attacker.owner
         else:
             owner = attacker.fleet.owner
             
-        for fleet in Fleets:
+        for fleet in self.fleets:
             if fleet.owner != owner:
                 if fleet.ships != 0:
-                    defenders.append(fleet)
-        return defenders
+                    armada.addFleet(fleet)
+                    
+        return armada
         
     def fight(self, attacker):
         
-        defenders = self.getOpponent(attacker)
+        defender = self.getOpponent(attacker)
         
         if DEBUG: print("%s (%d)" % (Vaisseaux[attacker.shipid], attacker.effectif))
         
         for shipid in attacker.engagement:
-            for defender in defenders:
-                if shipid in defender.fleet:
-                    ship = defender.fleet[shipid]
-                    if ship.effectif > 0:
-                        attacker.firepower, kill = ship.hit(attacker.firepower)
-                        attacker.addKill(ship.shipid, kill)
-                        if DEBUG: print("\t%s (%d) %d" % (ship.shipname, kill, attacker.firepower))
-                        if not attacker.firepower:
-                            break
+            if defender.effectif(shipid):
+                attacker.firepower, kill = defender.hit(shipid, attacker.firepower)
+                attacker.addKill(shipid, kill)
+                if DEBUG: print("\t%s (%d) %d" % (Vaisseaux[shipid], kill, attacker.firepower))
+                if not attacker.firepower:
+                    break
     
     def victory(self):
         
-        for fleet in Fleets:
+        if self.rounds > 24:
+            return True
+        
+        for fleet in self.fleets:
             if fleet.ships != 0:
-                if self.getOpponent(fleet):
+                if self.getOpponent(fleet).fleets:
                     return False
         return True
         
     def hitcount(self):
         
-        for opponent in Fleets:
+        for opponent in self.fleets:
             print ("Flotte %s (%d)" % (opponent.owner, opponent.signature))
             for shipid, ship in sorted(opponent.fleet.items()):
                 print ("%s (%d)" % (ship.shipname, ship.effectif))
@@ -239,26 +285,21 @@ class Battle():
         print ("en %d round(s)" % self.rounds)
         
     def stop(self):
-        for fleet in Fleets:
+        for fleet in self.fleets:
             fleet.stop()
             
 
-Fleets = []
-
-
 if __name__ == '__main__':
     
-    #oppA = Fleet('A', [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0])
-    #oppB = Fleet('B', [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0])
-    #oppA = Fleet('A', [0, 0, 0, 0, 0, 0, 2500, 0, 0, 0, 0, 0])
-    #oppB = Fleet('B', [0, 0, 0, 2500, 0, 0, 0, 0, 0, 0, 0, 0])
-
-    oppA = Fleet('A', [0, 0, 0, 0, 0, 0, 2500, 0, 11750, 0, 0, 0])
-    oppB = Fleet('B', [1189, 265, 0, 247, 350, 257, 380, 886, 317, 489, 588, 0])
-    oppC = Fleet('C', [0, 0, 750, 0, 150, 0, 0, 0, 0, 0, 0, 0])
-
-    Fleets.append(oppA)
-    Fleets.append(oppB)
-    Fleets.append(oppC)
+    battle = Battle()
     
-    Battle()
+    #battle.addFleet ('A', [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0])
+    #battle.addFleet ('B', [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0])
+    #battle.addFleet ('A', [0, 0, 0, 0, 0, 0, 2500, 0, 0, 0, 0, 0])
+    #battle.addFleet ('B', [0, 0, 0, 2500, 0, 0, 0, 0, 0, 0, 0, 0])
+    battle.addFleet( 'A', [0, 0, 0, 0, 0, 0, 2500, 0, 11750, 0, 0, 0] )
+    battle.addFleet( 'B', [1189, 265, 0, 247, 350, 257, 380, 886, 317, 489, 588, 0] )
+    battle.addFleet( 'A', [0, 0, 750, 0, 150, 0, 0, 0, 0, 0, 0, 0] )
+    
+    battle.do()
+    
